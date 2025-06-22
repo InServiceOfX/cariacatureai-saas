@@ -1,0 +1,4 @@
+name = "cariacatureai"
+pages_build_output_dir = ".svelte-kit/cloudflare"
+compatibility_date = "2025-06-21"
+compatibility_flags = ["nodejs_compat"]

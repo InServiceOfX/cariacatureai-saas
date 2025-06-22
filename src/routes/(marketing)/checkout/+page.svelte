@@ -110,27 +110,30 @@
                   class="w-64 h-64 object-contain mx-auto border-2 border-gray-200 rounded-lg"
                 />
 
-                <!-- Watermark Overlay -->
-                <div
-                  class="absolute inset-0 flex items-center justify-center pointer-events-none"
-                >
+                <!-- Less Aggressive Overlay - Covers only 2/3 of the image -->
+                <div class="absolute inset-0 pointer-events-none">
+                  <!-- Semi-transparent overlay covering bottom 2/3 -->
                   <div
-                    class="backdrop-blur-sm bg-white bg-opacity-30 rounded-lg w-full h-full flex items-center justify-center relative"
-                  >
-                    <!-- Watermark Text -->
-                    <div
-                      class="text-purple-600 text-lg font-bold transform -rotate-45 opacity-70 absolute inset-0 flex items-center justify-center"
-                      style="font-family: 'Fredoka', cursive;"
-                    >
-                      PREVIEW
-                    </div>
+                    class="absolute bottom-0 left-0 right-0 h-2/3 bg-gradient-to-t from-black/40 to-transparent rounded-lg"
+                  ></div>
 
-                    <!-- Lock Icon -->
-                    <div
-                      class="absolute top-2 right-2 bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg"
+                  <!-- Floating "Unlock" badge -->
+                  <div
+                    class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"
+                  >
+                    <span
+                      class="relative z-10 inline-block px-6 py-3 bg-white rounded-xl text-black border-3 border-black transform -rotate-2 shadow-lg"
+                      style="font-family: 'Fredoka', cursive; font-weight: 600; font-size: 1rem;"
                     >
-                      🔒
-                    </div>
+                      unlock your<br />sticker now!
+                    </span>
+                  </div>
+
+                  <!-- Lock Icon -->
+                  <div
+                    class="absolute top-2 right-2 bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold shadow-lg"
+                  >
+                    🔒
                   </div>
                 </div>
               {:else}

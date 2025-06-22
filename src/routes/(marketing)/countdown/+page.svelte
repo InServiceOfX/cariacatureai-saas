@@ -149,15 +149,24 @@
         {#if storedImage.generatedStickerUrl}
           <div class="mb-8 relative">
             <!-- Protected Sticker Container -->
-            <div
-              class="relative inline-block cursor-pointer"
+            <button
+              type="button"
+              class="relative inline-block cursor-pointer bg-transparent border-none p-0 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 rounded-lg"
               on:click={handleStickerInteraction}
               on:mouseenter={handleStickerInteraction}
               on:touchstart={handleStickerInteraction}
+              on:keydown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  handleStickerInteraction()
+                }
+              }}
+              aria-label="Click to unlock your sticker preview"
+              aria-describedby="sticker-preview-description"
             >
               <img
                 src={storedImage.generatedStickerUrl}
-                alt="Your generated sticker"
+                alt="Your generated sticker preview"
                 class="w-48 h-48 object-contain mx-auto border-2 border-gray-200 rounded-lg select-none pointer-events-none"
                 draggable="false"
                 style="user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;"
@@ -189,9 +198,12 @@
                   🔒
                 </div>
               </div>
-            </div>
+            </button>
 
-            <p class="text-sm text-gray-500 mt-2">
+            <p
+              id="sticker-preview-description"
+              class="text-sm text-gray-500 mt-2"
+            >
               Preview of your generated sticker - Click to unlock
             </p>
           </div>

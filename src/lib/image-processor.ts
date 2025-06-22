@@ -1,5 +1,5 @@
 export interface ProcessedImage {
-  buffer: Buffer
+  buffer: Uint8Array
   width: number
   height: number
   format: string
@@ -18,19 +18,27 @@ export type CropPosition =
   | "southeast"
   | "southwest"
 
-// Helper function to convert buffer to base64 safely
-function bufferToBase64(buffer: Buffer): string {
-  const bytes = new Uint8Array(buffer)
+// Helper function to convert base64 to Uint8Array
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64)
+  const bytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes
+}
+
+// Helper function to convert Uint8Array to base64
+function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = ""
-  const len = bytes.byteLength
-  for (let i = 0; i < len; i++) {
+  for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i])
   }
   return btoa(binary)
 }
 
 export async function processImageForOpenAI(
-  imageBuffer: Buffer,
+  imageBuffer: Uint8Array,
   maxSize: number = 1024,
   makeSquare: boolean = true,
   cropPosition: CropPosition = "attention",
@@ -44,7 +52,7 @@ export async function processImageForOpenAI(
       console.log("Image is already within acceptable size limits")
       return {
         buffer: imageBuffer,
-        width: 0, // We don't know the actual dimensions without processing
+        width: 0,
         height: 0,
         format: "png",
       }
@@ -54,8 +62,8 @@ export async function processImageForOpenAI(
     const squareSize = Math.min(maxSize, 1024)
     console.log(`Target square size: ${squareSize} x ${squareSize}`)
 
-    // Convert buffer to base64 safely
-    const base64 = bufferToBase64(imageBuffer)
+    // Convert Uint8Array to base64 safely
+    const base64 = uint8ArrayToBase64(imageBuffer)
     const dataUrl = `data:image/jpeg;base64,${base64}`
 
     // Create image element
@@ -120,9 +128,9 @@ export async function processImageForOpenAI(
       quality: 0.8,
     })
 
-    // Convert blob to buffer
+    // Convert blob to Uint8Array
     const arrayBuffer = await blob.arrayBuffer()
-    const processedBuffer = Buffer.from(arrayBuffer)
+    const processedBuffer = new Uint8Array(arrayBuffer)
 
     let finalWidth = squareSize
     let finalHeight = squareSize
@@ -161,7 +169,7 @@ export async function processImageForOpenAI(
       })
 
       const smallArrayBuffer = await smallBlob.arrayBuffer()
-      const smallBuffer = Buffer.from(smallArrayBuffer)
+      const smallBuffer = new Uint8Array(smallArrayBuffer)
 
       finalWidth = newSize
       finalHeight = newSize
@@ -193,7 +201,7 @@ export async function processImageForOpenAI(
   }
 }
 
-export async function validateImageSize(buffer: Buffer): Promise<boolean> {
+export async function validateImageSize(buffer: Uint8Array): Promise<boolean> {
   // FAL AI has a 4MB limit for images
   const maxSize = 4 * 1024 * 1024 // 4MB
   return buffer.length <= maxSize

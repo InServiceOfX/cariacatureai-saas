@@ -19,6 +19,55 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes
 }
 
+// Helper function to check if image is too dark
+async function isImageTooDark(imageUrl: string): Promise<boolean> {
+  try {
+    // Create a canvas to analyze the image
+    const img = new Image()
+    const imageLoaded = new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error("Failed to load image"))
+    })
+
+    img.crossOrigin = "anonymous"
+    img.src = imageUrl
+    await imageLoaded
+
+    const canvas = new OffscreenCanvas(img.width, img.height)
+    const ctx = canvas.getContext("2d")
+
+    if (!ctx) {
+      return false // If we can't analyze, assume it's okay
+    }
+
+    ctx.drawImage(img, 0, 0)
+    const imageData = ctx.getImageData(0, 0, img.width, img.height)
+    const data = imageData.data
+
+    let totalBrightness = 0
+    let pixelCount = 0
+
+    // Calculate average brightness
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+      const brightness = (r + g + b) / 3
+      totalBrightness += brightness
+      pixelCount++
+    }
+
+    const averageBrightness = totalBrightness / pixelCount
+    console.log("Image average brightness:", averageBrightness)
+
+    // Consider image too dark if average brightness is below 50 (out of 255)
+    return averageBrightness < 50
+  } catch (error) {
+    console.error("Error analyzing image brightness:", error)
+    return false // If we can't analyze, assume it's okay
+  }
+}
+
 export const POST: RequestHandler = async ({ request }) => {
   const startTime = Date.now()
 
@@ -128,6 +177,39 @@ export const POST: RequestHandler = async ({ request }) => {
       console.error("No generated image URL in result:", result.data)
       throw new Error(
         "Failed to generate image with FAL AI - no image URL returned",
+      )
+    }
+
+    // Check for NSFW content
+    if (
+      result.data.has_nsfw_concepts &&
+      result.data.has_nsfw_concepts.some(Boolean)
+    ) {
+      console.error("NSFW content detected in generated image")
+      return json(
+        {
+          error: "inappropriate_content",
+          message:
+            "The generated image contains inappropriate content. Please try with a different image.",
+          redirectToUpload: true,
+        },
+        { status: 400 },
+      )
+    }
+
+    // Check if the generated image is too dark
+    console.log("Checking image brightness...")
+    const isTooDark = await isImageTooDark(generatedImageUrl)
+    if (isTooDark) {
+      console.error("Generated image is too dark")
+      return json(
+        {
+          error: "dark_image",
+          message:
+            "The generated image is too dark. Please try with a better lit image.",
+          redirectToUpload: true,
+        },
+        { status: 400 },
       )
     }
 

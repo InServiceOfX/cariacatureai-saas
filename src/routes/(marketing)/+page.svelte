@@ -15,6 +15,9 @@
   let uploadStatus: "idle" | "uploading" | "generating" | "success" | "error" =
     "idle"
   let generatedStickerUrl: string | null = null
+  let imageId: string | null = null
+  let uploadedImage: string | null = null
+  let isGenerating = false
 
   function handleFileSelected(event: CustomEvent) {
     const { file, preview } = event.detail
@@ -23,6 +26,8 @@
     errorMessage = null
     uploadStatus = "idle"
     generatedStickerUrl = null
+    imageId = null
+    uploadedImage = null
   }
 
   function handleError(event: CustomEvent) {
@@ -38,11 +43,13 @@
 
     try {
       // Store the image in memory
-      const imageId = imageStore.storeImage(selectedFile, imagePreview)
+      imageId = imageStore.storeImage(selectedFile, imagePreview)
 
       // Resize image for FAL AI (client-side)
       uploadStatus = "generating"
       const resizedImage = await resizeImageForOpenAI(selectedFile, 1024)
+
+      uploadedImage = resizedImage
 
       const response = await fetch("/api/generate-sticker", {
         method: "POST",
@@ -57,11 +64,7 @@
 
       const result = await response.json()
 
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to generate sticker")
-      }
-
-      if (result.success) {
+      if (response.ok && result.success) {
         generatedStickerUrl = result.generatedImageUrl
         uploadStatus = "success"
 
@@ -71,13 +74,28 @@
         // Redirect to countdown page with the image ID
         await goto(`/countdown?imageId=${imageId}`)
       } else {
-        throw new Error(result.error || "Failed to generate sticker")
+        // Handle specific error cases
+        if (result.error === "inappropriate_content" || result.error === "dark_image") {
+          errorMessage = result.message
+          // Reset the form to allow new upload
+          uploadedImage = null
+          generatedStickerUrl = null
+          imageId = null
+          // Clear any stored image data
+          if (imageId) {
+            imageStore.removeImage(imageId)
+          }
+        } else {
+          errorMessage = result.error || "Failed to generate sticker. Please try again."
+        }
       }
     } catch (error: any) {
       console.error("Upload error:", error)
       errorMessage =
         error.message || "Failed to process image. Please try again."
       uploadStatus = "error"
+    } finally {
+      isGenerating = false
     }
   }
 
@@ -87,6 +105,8 @@
     errorMessage = null
     uploadStatus = "idle"
     generatedStickerUrl = null
+    imageId = null
+    uploadedImage = null
   }
 </script>
 

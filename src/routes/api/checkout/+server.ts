@@ -7,15 +7,16 @@ const stripe = new Stripe(PRIVATE_STRIPE_API_KEY, {
   apiVersion: "2023-08-16",
 })
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, url }) => {
   try {
-    const { imageId } = await request.json()
+    const { imageId, generatedStickerUrl } = await request.json()
 
     if (!imageId) {
       return json({ error: "Image ID is required" }, { status: 400 })
     }
 
-    // Create Stripe checkout session
+    const origin = url.origin
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [
@@ -25,20 +26,16 @@ export const POST: RequestHandler = async ({ request }) => {
             product_data: {
               name: "Custom Sticker",
               description:
-                "High-quality digital sticker created from your image",
-              images: [], // You could add a preview image here
+                "High-quality digital sticker generated from your photo",
             },
-            unit_amount: 999, // $9.99 in cents
+            unit_amount: 199, // $1.99 in cents
           },
           quantity: 1,
         },
       ],
       mode: "payment",
-      success_url: `${request.headers.get("origin")}/success?session_id={CHECKOUT_SESSION_ID}&imageId=${imageId}`,
-      cancel_url: `${request.headers.get("origin")}/checkout?imageId=${imageId}`,
-      metadata: {
-        imageId: imageId,
-      },
+      success_url: `${origin}/success?session_id={CHECKOUT_SESSION_ID}&imageId=${imageId}&stickerUrl=${encodeURIComponent(generatedStickerUrl || "")}`,
+      cancel_url: `${origin}/countdown?imageId=${imageId}`,
     })
 
     return json({ url: session.url })

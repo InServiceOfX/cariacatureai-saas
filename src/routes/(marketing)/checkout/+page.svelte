@@ -36,6 +36,7 @@
         },
         body: JSON.stringify({
           imageId: imageId,
+          generatedStickerUrl: storedImage.generatedStickerUrl,
         }),
       })
 
@@ -282,14 +283,10 @@
         <div class="bg-gray-50 rounded-lg p-6 mb-8">
           <div class="flex justify-between items-center">
             <div>
-              <span class="text-lg font-semibold text-gray-900"
-                >Custom Sticker Package</span
-              >
-              <p class="text-sm text-gray-600">
-                High-quality digital sticker with instant download
-              </p>
+              <span class="text-lg font-semibold text-gray-900">Custom Sticker Package</span>
+              <p class="text-sm text-gray-600">High-quality digital sticker with instant download</p>
             </div>
-            <span class="text-3xl font-bold text-green-600">$9.99</span>
+            <span class="text-3xl font-bold text-green-600">$1.99</span>
           </div>
         </div>
 

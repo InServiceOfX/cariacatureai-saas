@@ -350,3 +350,17 @@ CMSaasStarter is sponsored by [Kiln AI](https://getkiln.ai): the easiest way to 
 **Demo of Kiln AI:**
 
 https://github.com/user-attachments/assets/0fb3cd48-0f2c-40f5-baf2-b38f11ed85ea
+
+### What I ended up doing
+
+To run it locally, do
+
+```
+npm run dev
+```
+
+To run from a Docker container with ports exposed, do
+
+```
+ npm run dev -- --host 0.0.0.0
+```

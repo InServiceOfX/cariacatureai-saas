@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImageUpload from "$lib/components/ImageUpload.svelte"
+  import ImageCarousel from "$lib/components/ImageCarousel.svelte"
   import { imageStore } from "$lib/image-store"
   import { resizeImageForOpenAI } from "$lib/upload-utils"
   import { goto } from "$app/navigation"
@@ -75,7 +76,10 @@
         await goto(`/countdown?imageId=${imageId}`)
       } else {
         // Handle specific error cases
-        if (result.error === "inappropriate_content" || result.error === "dark_image") {
+        if (
+          result.error === "inappropriate_content" ||
+          result.error === "dark_image"
+        ) {
           errorMessage = result.message
           // Reset the form to allow new upload
           uploadedImage = null
@@ -86,7 +90,8 @@
             imageStore.removeImage(imageId)
           }
         } else {
-          errorMessage = result.error || "Failed to generate sticker. Please try again."
+          errorMessage =
+            result.error || "Failed to generate sticker. Please try again."
         }
       }
     } catch (error: any) {
@@ -137,6 +142,8 @@
   class="min-h-screen bg-gradient-to-br from-pink-50 to-purple-100 flex items-center justify-center px-4"
 >
   <div class="max-w-2xl w-full text-center">
+    <ImageCarousel />
+
     <h1 class="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
       Generate Your Own Sticker Here!
     </h1>

@@ -65,11 +65,11 @@
       const result = await response.json()
 
       if (response.ok && result.success) {
-        generatedStickerUrl = result.generatedImageUrl
+        generatedStickerUrl = result.imageUrl
         uploadStatus = "success"
 
         // Store the generated sticker URL in the image store
-        imageStore.storeGeneratedSticker(imageId, result.generatedImageUrl)
+        imageStore.storeGeneratedSticker(imageId, result.imageUrl)
 
         // Redirect to countdown page with the image ID
         await goto(`/countdown?imageId=${imageId}`)

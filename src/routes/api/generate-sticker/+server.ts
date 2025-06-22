@@ -11,60 +11,40 @@ fal.config({
 
 // Helper function to convert base64 to Uint8Array
 function base64ToUint8Array(base64: string): Uint8Array {
-  const binaryString = atob(base64)
-  const bytes = new Uint8Array(binaryString.length)
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
+  // Remove data URL prefix if present
+  const base64Data = base64.replace(/^data:image\/[a-z]+;base64,/, "")
+
+  try {
+    const binaryString = atob(base64Data)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+    return bytes
+  } catch (error) {
+    console.error("Base64 decoding error:", error)
+    console.error("Base64 string length:", base64Data.length)
+    console.error("Base64 string preview:", base64Data.substring(0, 100))
+    throw new Error("Invalid base64 data")
   }
-  return bytes
 }
 
-// Helper function to check if image is too dark
-async function isImageTooDark(imageUrl: string): Promise<boolean> {
+// Helper function to upload image to FAL AI storage
+async function uploadImageToFAL(imageBuffer: Uint8Array): Promise<string> {
   try {
-    // Create a canvas to analyze the image
-    const img = new Image()
-    const imageLoaded = new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve()
-      img.onerror = () => reject(new Error("Failed to load image"))
-    })
+    console.log("Uploading image to FAL AI storage...")
 
-    img.crossOrigin = "anonymous"
-    img.src = imageUrl
-    await imageLoaded
+    // Convert Uint8Array to File object
+    const file = new File([imageBuffer], "image.png", { type: "image/png" })
 
-    const canvas = new OffscreenCanvas(img.width, img.height)
-    const ctx = canvas.getContext("2d")
+    // Upload to FAL AI storage using the correct method
+    const url = await fal.storage.upload(file)
+    console.log("Image uploaded successfully:", url)
 
-    if (!ctx) {
-      return false // If we can't analyze, assume it's okay
-    }
-
-    ctx.drawImage(img, 0, 0)
-    const imageData = ctx.getImageData(0, 0, img.width, img.height)
-    const data = imageData.data
-
-    let totalBrightness = 0
-    let pixelCount = 0
-
-    // Calculate average brightness
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i]
-      const g = data[i + 1]
-      const b = data[i + 2]
-      const brightness = (r + g + b) / 3
-      totalBrightness += brightness
-      pixelCount++
-    }
-
-    const averageBrightness = totalBrightness / pixelCount
-    console.log("Image average brightness:", averageBrightness)
-
-    // Consider image too dark if average brightness is below 50 (out of 255)
-    return averageBrightness < 50
+    return url
   } catch (error) {
-    console.error("Error analyzing image brightness:", error)
-    return false // If we can't analyze, assume it's okay
+    console.error("Failed to upload image to FAL AI:", error)
+    throw new Error("Failed to upload image")
   }
 }
 
@@ -78,84 +58,49 @@ export const POST: RequestHandler = async ({ request }) => {
 
     if (!imageBase64 || !imageId) {
       console.error("Missing required data:", {
-        hasImageBase64: !!imageBase64,
-        hasImageId: !!imageId,
+        imageBase64: !!imageBase64,
+        imageId: !!imageId,
       })
-      return json({ error: "Image data and ID are required" }, { status: 400 })
+      return json({ error: "Missing image data or image ID" }, { status: 400 })
     }
 
-    console.log("Processing request for imageId:", imageId)
-    console.log("Image base64 length:", imageBase64.length)
+    console.log("Processing image...")
+    console.log("Base64 data type:", typeof imageBase64)
+    console.log("Base64 data length:", imageBase64.length)
+    console.log("Base64 data preview:", imageBase64.substring(0, 100))
 
-    // Convert base64 to Uint8Array properly
-    const base64Data = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "")
-    const originalBuffer = base64ToUint8Array(base64Data)
+    // Convert base64 to Uint8Array
+    const imageBuffer = base64ToUint8Array(imageBase64)
 
-    console.log("Original image size:", originalBuffer.length, "bytes")
-
-    // Validate original image size
-    if (originalBuffer.length > 10 * 1024 * 1024) {
-      // 10MB limit
-      console.error("Image too large:", originalBuffer.length, "bytes")
-      return json(
-        { error: "Image is too large. Please use an image under 10MB." },
-        { status: 413 },
-      )
+    // Validate image size
+    if (!(await validateImageSize(imageBuffer))) {
+      console.error("Image too large")
+      return json({ error: "Image size exceeds 4MB limit" }, { status: 400 })
     }
 
-    // Process and resize the image for FAL AI - ensure it's square
     console.log("Starting image processing...")
-    const processedImage = await processImageForOpenAI(
-      originalBuffer,
-      1024, // maxSize
-      true, // makeSquare = true
-      "attention", // cropPosition = "attention" for subject detection
-    )
 
-    console.log("Processed image size:", processedImage.buffer.length, "bytes")
-    console.log(
-      "Processed dimensions:",
-      processedImage.width,
-      "x",
-      processedImage.height,
-    )
+    // Process image (resize if needed, maintain aspect ratio)
+    const processedImage = await processImageForOpenAI(imageBuffer, 1024)
 
-    // Validate the processed image size
-    if (!(await validateImageSize(processedImage.buffer))) {
-      console.error(
-        "Processed image still too large:",
-        processedImage.buffer.length,
-        "bytes",
-      )
-      return json(
-        {
-          error:
-            "Image is still too large after processing. Please try a smaller image.",
-        },
-        { status: 400 },
-      )
-    }
+    console.log("Image processed successfully")
 
-    // Create a File object for FAL AI upload
-    const imageFile = new File([processedImage.buffer], "image.png", {
-      type: "image/png",
-    })
+    // Upload the processed image to FAL AI storage
+    const imageUrl = await uploadImageToFAL(processedImage.buffer)
 
-    // Upload the image to FAL AI storage
-    console.log("Uploading image to FAL AI storage...")
-    const uploadStart = Date.now()
-    const imageUrl = await fal.storage.upload(imageFile)
-    const uploadTime = Date.now() - uploadStart
-    console.log("Image uploaded to:", imageUrl, "in", uploadTime, "ms")
+    console.log("Calling FAL AI...")
 
-    // Use FAL AI flux-pro/kontext model for image generation
-    console.log("Generating sticker with FAL AI...")
-    const generationStart = Date.now()
+    // Use the correct FAL AI subscribe method with the proper model name
     const result = await fal.subscribe("fal-ai/flux-pro/kontext", {
       input: {
         prompt:
-          "Turn the uploaded image into a cute chibi-style cartoon sticker inspired by Guibly. Use soft pastel colors, clean black outlines, and a thick white border. The character(s) should have big eyes, rounded facial features, and joyful expressions. Keep the full upper body visible, in a friendly pose. Place everything on a light peach background and make sure it looks like a high-quality digital sticker",
-        image_url: imageUrl,
+          "A cute chibi-style cartoon sticker of a person, full upper body visible, clean lines, soft shading, white outlined sticker border, transparent background, joyful expression, kawaii style",
+        image_url: imageUrl, // Use the uploaded image URL
+        num_inference_steps: 20,
+        guidance_scale: 7.5,
+        num_images: 1,
+        image_strength: 0.8,
+        prompt_strength: 0.8,
       },
       logs: true,
       onQueueUpdate: (update) => {
@@ -165,132 +110,72 @@ export const POST: RequestHandler = async ({ request }) => {
       },
     })
 
-    const generationTime = Date.now() - generationStart
-    console.log("FAL AI generation completed in", generationTime, "ms")
-    console.log("FAL AI result:", result.data)
+    console.log("FAL AI response received")
     console.log("Request ID:", result.requestId)
-
-    // Extract the generated image URL from the result
-    const generatedImageUrl = result.data.images?.[0]?.url
-
-    if (!generatedImageUrl) {
-      console.error("No generated image URL in result:", result.data)
-      throw new Error(
-        "Failed to generate image with FAL AI - no image URL returned",
-      )
-    }
 
     // Check for NSFW content
     if (
       result.data.has_nsfw_concepts &&
       result.data.has_nsfw_concepts.some(Boolean)
     ) {
-      console.error("NSFW content detected in generated image")
+      console.error("NSFW content detected")
       return json(
         {
-          error: "inappropriate_content",
-          message:
-            "The generated image contains inappropriate content. Please try with a different image.",
+          error:
+            "Inappropriate content detected. Please try with a different image.",
           redirectToUpload: true,
         },
         { status: 400 },
       )
     }
 
-    // Check if the generated image is too dark
-    console.log("Checking image brightness...")
-    const isTooDark = await isImageTooDark(generatedImageUrl)
-    if (isTooDark) {
-      console.error("Generated image is too dark")
-      return json(
-        {
-          error: "dark_image",
-          message:
-            "The generated image is too dark. Please try with a better lit image.",
-          redirectToUpload: true,
-        },
-        { status: 400 },
-      )
+    if (!result.data.images || result.data.images.length === 0) {
+      console.error("No images generated")
+      return json({ error: "Failed to generate sticker" }, { status: 500 })
     }
 
-    const totalTime = Date.now() - startTime
+    const generatedImageUrl = result.data.images[0].url
+    console.log("Successfully generated image:", generatedImageUrl)
+
+    const endTime = Date.now()
     console.log(
-      "Successfully generated image:",
-      generatedImageUrl,
-      "in",
-      totalTime,
-      "ms",
+      `=== Sticker generation completed in ${endTime - startTime} ms ===`,
     )
-    console.log("=== Sticker generation completed successfully ===")
 
     return json({
       success: true,
-      generatedImageUrl,
-      imageId,
-      message: "Sticker generated successfully",
-      processingTime: totalTime,
+      imageUrl: generatedImageUrl,
+      prompt: result.data.prompt,
+      seed: result.data.seed,
     })
-  } catch (error: any) {
-    const totalTime = Date.now() - startTime
+  } catch (error) {
+    const endTime = Date.now()
     console.error("=== Sticker generation failed ===")
-    console.error("Error after", totalTime, "ms:", error)
+    console.error("Error after", endTime - startTime, "ms:", error)
     console.error("Error name:", error.name)
     console.error("Error message:", error.message)
     console.error("Error stack:", error.stack)
 
-    // Handle specific error types
-    if (error.status === 401) {
-      console.error("FAL AI authentication failed")
-      return json(
-        {
-          error: "Authentication failed. Please check your FAL AI API key.",
-        },
-        { status: 401 },
-      )
+    // Log more details for validation errors
+    if (error.status === 422) {
+      console.error("Validation error details:", error.body)
     }
-
-    if (error.message?.includes("too large")) {
-      console.error("Image size error:", error.message)
-      return json(
-        {
-          error:
-            "Image is too large. Please try a smaller image or contact support.",
-        },
-        { status: 413 },
-      )
-    }
-
-    if (error.message?.includes("invalid")) {
-      console.error("Invalid image format:", error.message)
-      return json(
-        {
-          error: "Invalid image format. Please use JPEG, PNG, or WebP format.",
-        },
-        { status: 400 },
-      )
-    }
-
-    if (error.message?.includes("rate limit")) {
-      console.error("Rate limit exceeded:", error.message)
-      return json(
-        {
-          error: "Rate limit exceeded. Please try again in a moment.",
-        },
-        { status: 429 },
-      )
-    }
-
-    // Log the full error for debugging
-    console.error("Unhandled error type:", typeof error)
-    console.error("Full error object:", JSON.stringify(error, null, 2))
 
     return json(
       {
         error: "Failed to generate sticker. Please try again.",
-        debug:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
+        redirectToUpload: false,
       },
       { status: 500 },
     )
   }
+}
+
+// Helper function to convert Uint8Array to base64
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = ""
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
 }

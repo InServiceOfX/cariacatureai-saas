@@ -5,19 +5,6 @@ export interface ProcessedImage {
   format: string
 }
 
-export type CropPosition =
-  | "center"
-  | "entropy"
-  | "attention"
-  | "north"
-  | "south"
-  | "east"
-  | "west"
-  | "northeast"
-  | "northwest"
-  | "southeast"
-  | "southwest"
-
 // Helper function to convert base64 to Uint8Array
 function base64ToUint8Array(base64: string): Uint8Array {
   const binaryString = atob(base64)
@@ -40,15 +27,13 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 export async function processImageForOpenAI(
   imageBuffer: Uint8Array,
   maxSize: number = 1024,
-  makeSquare: boolean = true,
-  cropPosition: CropPosition = "attention",
 ): Promise<ProcessedImage> {
   try {
     const originalSize = imageBuffer.length
     console.log(`Original image size: ${originalSize} bytes`)
 
-    // If image is already under 4MB and reasonable size, just validate and return
-    if (originalSize <= 4 * 1024 * 1024 && originalSize < 1024 * 1024) {
+    // If image is already under 4MB, just validate and return
+    if (originalSize <= 4 * 1024 * 1024) {
       console.log("Image is already within acceptable size limits")
       return {
         buffer: imageBuffer,
@@ -59,140 +44,99 @@ export async function processImageForOpenAI(
     }
 
     // For larger images, we need to resize
-    const squareSize = Math.min(maxSize, 1024)
-    console.log(`Target square size: ${squareSize} x ${squareSize}`)
+    console.log(`Target max dimension: ${maxSize}`)
 
     // Convert Uint8Array to base64 safely
     const base64 = uint8ArrayToBase64(imageBuffer)
     const dataUrl = `data:image/jpeg;base64,${base64}`
 
-    // Create image element
-    const img = new Image()
-
-    // Create a promise to wait for image to load
-    const imageLoaded = new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve()
-      img.onerror = () => reject(new Error("Failed to load image"))
-    })
-
-    img.src = dataUrl
-    await imageLoaded
+    // Create image element using createImageBitmap for Cloudflare Workers
+    const response = await fetch(dataUrl)
+    const blob = await response.blob()
+    const img = await createImageBitmap(blob)
 
     const originalWidth = img.width
     const originalHeight = img.height
 
     console.log(`Original dimensions: ${originalWidth} x ${originalHeight}`)
 
+    // Calculate new dimensions while maintaining aspect ratio
+    let newWidth = originalWidth
+    let newHeight = originalHeight
+
+    if (originalWidth > maxSize || originalHeight > maxSize) {
+      if (originalWidth > originalHeight) {
+        newWidth = maxSize
+        newHeight = Math.round((originalHeight * maxSize) / originalWidth)
+      } else {
+        newHeight = maxSize
+        newWidth = Math.round((originalWidth * maxSize) / originalHeight)
+      }
+    }
+
+    console.log(`New dimensions: ${newWidth} x ${newHeight}`)
+
     // Create canvas
-    const canvas = new OffscreenCanvas(squareSize, squareSize)
+    const canvas = new OffscreenCanvas(newWidth, newHeight)
     const ctx = canvas.getContext("2d")
 
     if (!ctx) {
       throw new Error("Failed to get canvas context")
     }
 
-    // Calculate crop dimensions to maintain aspect ratio
-    const aspectRatio = originalWidth / originalHeight
-    let cropWidth, cropHeight, cropX, cropY
-
-    if (aspectRatio > 1) {
-      // Image is wider than tall
-      cropHeight = originalHeight
-      cropWidth = originalHeight // Make it square
-      cropY = 0
-      cropX = (originalWidth - cropWidth) / 2 // Center horizontally
-    } else {
-      // Image is taller than wide
-      cropWidth = originalWidth
-      cropHeight = originalWidth // Make it square
-      cropX = 0
-      cropY = (originalHeight - cropHeight) / 2 // Center vertically
-    }
-
-    // Draw the cropped and resized image
+    // Draw the resized image maintaining aspect ratio
     ctx.drawImage(
       img,
-      cropX,
-      cropY,
-      cropWidth,
-      cropHeight, // Source rectangle
       0,
       0,
-      squareSize,
-      squareSize, // Destination rectangle
+      originalWidth,
+      originalHeight, // Source rectangle
+      0,
+      0,
+      newWidth,
+      newHeight, // Destination rectangle
     )
 
     // Convert canvas to blob with compression
-    const blob = await canvas.convertToBlob({
+    const processedBlob = await canvas.convertToBlob({
       type: "image/png",
       quality: 0.8,
     })
 
     // Convert blob to Uint8Array
-    const arrayBuffer = await blob.arrayBuffer()
+    const arrayBuffer = await processedBlob.arrayBuffer()
     const processedBuffer = new Uint8Array(arrayBuffer)
 
-    let finalWidth = squareSize
-    let finalHeight = squareSize
-
-    // If the processed image is still too large, reduce size further
+    // If the processed image is still too large, reduce quality further
     if (processedBuffer.length > 4 * 1024 * 1024) {
-      console.log("Image still too large, reducing size further")
-      const scaleFactor = Math.sqrt((4 * 1024 * 1024) / processedBuffer.length)
-      const newSize = Math.max(256, Math.round(squareSize * scaleFactor)) // Minimum 256px
+      console.log("Image still too large, reducing quality further")
 
-      // Create new canvas with smaller size
-      const smallCanvas = new OffscreenCanvas(newSize, newSize)
-      const smallCtx = smallCanvas.getContext("2d")
-
-      if (!smallCtx) {
-        throw new Error("Failed to get canvas context")
-      }
-
-      // Draw the cropped and resized image at smaller size
-      smallCtx.drawImage(
-        img,
-        cropX,
-        cropY,
-        cropWidth,
-        cropHeight, // Source rectangle
-        0,
-        0,
-        newSize,
-        newSize, // Destination rectangle
-      )
-
-      // Convert to blob with lower quality
-      const smallBlob = await smallCanvas.convertToBlob({
-        type: "image/png",
+      const lowerQualityBlob = await canvas.convertToBlob({
+        type: "image/jpeg",
         quality: 0.6,
       })
 
-      const smallArrayBuffer = await smallBlob.arrayBuffer()
-      const smallBuffer = new Uint8Array(smallArrayBuffer)
+      const lowerQualityArrayBuffer = await lowerQualityBlob.arrayBuffer()
+      const lowerQualityBuffer = new Uint8Array(lowerQualityArrayBuffer)
 
-      finalWidth = newSize
-      finalHeight = newSize
-
-      console.log(`Final size: ${smallBuffer.length} bytes`)
-      console.log(`Final dimensions: ${finalWidth} x ${finalHeight}`)
+      console.log(`Final size: ${lowerQualityBuffer.length} bytes`)
+      console.log(`Final dimensions: ${newWidth} x ${newHeight}`)
 
       return {
-        buffer: smallBuffer,
-        width: finalWidth,
-        height: finalHeight,
-        format: "png",
+        buffer: lowerQualityBuffer,
+        width: newWidth,
+        height: newHeight,
+        format: "jpeg",
       }
     }
 
     console.log(`Final size: ${processedBuffer.length} bytes`)
-    console.log(`Final dimensions: ${finalWidth} x ${finalHeight}`)
-    console.log(`Is square: ${finalWidth === finalHeight}`)
+    console.log(`Final dimensions: ${newWidth} x ${newHeight}`)
 
     return {
       buffer: processedBuffer,
-      width: finalWidth,
-      height: finalHeight,
+      width: newWidth,
+      height: newHeight,
       format: "png",
     }
   } catch (error) {
@@ -202,7 +146,44 @@ export async function processImageForOpenAI(
 }
 
 export async function validateImageSize(buffer: Uint8Array): Promise<boolean> {
-  // FAL AI has a 4MB limit for images
   const maxSize = 4 * 1024 * 1024 // 4MB
   return buffer.length <= maxSize
+}
+
+// Helper function to check if image is too dark
+export async function isImageTooDark(imageUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(imageUrl)
+    const blob = await response.blob()
+    const img = await createImageBitmap(blob)
+
+    const canvas = new OffscreenCanvas(img.width, img.height)
+    const ctx = canvas.getContext("2d")
+
+    if (!ctx) return false
+
+    ctx.drawImage(img, 0, 0)
+    const imageData = ctx.getImageData(0, 0, img.width, img.height)
+    const data = imageData.data
+
+    let totalBrightness = 0
+    const pixelCount = data.length / 4
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
+      const brightness = (r + g + b) / 3
+      totalBrightness += brightness
+    }
+
+    const averageBrightness = totalBrightness / pixelCount
+    console.log(`Average brightness: ${averageBrightness}`)
+
+    // Consider image too dark if average brightness is less than 30
+    return averageBrightness < 30
+  } catch (error) {
+    console.error("Error checking image brightness:", error)
+    return false
+  }
 }
